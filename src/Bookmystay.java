@@ -1,70 +1,139 @@
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * Abstract Room class representing common room properties.
+ */
+abstract class Room {
+
+    protected String roomType;
+    protected int beds;
+    protected int size;
+    protected double price;
+
+    public Room(String roomType, int beds, int size, double price) {
+        this.roomType = roomType;
+        this.beds = beds;
+        this.size = size;
+        this.price = price;
+    }
+
+    public String getRoomType() {
+        return roomType;
+    }
+
+    public void displayDetails() {
+        System.out.println("Room Type: " + roomType);
+        System.out.println("Beds: " + beds);
+        System.out.println("Size: " + size + " sq.ft");
+        System.out.println("Price per Night: $" + price);
+    }
+}
+
+/**
+ * Single Room implementation
+ */
+class SingleRoom extends Room {
+    public SingleRoom() {
+        super("Single Room", 1, 200, 100);
+    }
+}
+
+/**
+ * Double Room implementation
+ */
+class DoubleRoom extends Room {
+    public DoubleRoom() {
+        super("Double Room", 2, 350, 180);
+    }
+}
+
+/**
+ * Suite Room implementation
+ */
+class SuiteRoom extends Room {
+    public SuiteRoom() {
+        super("Suite Room", 3, 500, 300);
+    }
+}
+
+/**
+ * RoomInventory manages centralized room availability.
+ */
 class RoomInventory {
 
     private Map<String, Integer> inventory;
 
-    /**
-     * Constructor initializes the room inventory with default values.
-     */
     public RoomInventory() {
         inventory = new HashMap<>();
 
-        // Initialize room availability
         inventory.put("Single Room", 10);
         inventory.put("Double Room", 5);
-        inventory.put("Suite Room", 2);
+        inventory.put("Suite Room", 0); // Example: unavailable
     }
 
     /**
-     * Retrieves the availability of a specific room type.
+     * Read-only method to get availability
      */
     public int getAvailability(String roomType) {
         return inventory.getOrDefault(roomType, 0);
     }
+}
 
-    /**
-     * Updates the availability of a specific room type.
-     */
-    public void updateAvailability(String roomType, int newCount) {
-        inventory.put(roomType, newCount);
+/**
+ * RoomSearchService handles search operations.
+ */
+class RoomSearchService {
+
+    private RoomInventory inventory;
+
+    public RoomSearchService(RoomInventory inventory) {
+        this.inventory = inventory;
     }
 
     /**
-     * Displays the entire inventory state.
+     * Displays available rooms without modifying inventory
      */
-    public void displayInventory() {
-        System.out.println("----- Current Room Inventory -----");
+    public void searchAvailableRooms(Room[] rooms) {
 
-        for (Map.Entry<String, Integer> entry : inventory.entrySet()) {
-            System.out.println(entry.getKey() + " : " + entry.getValue() + " rooms available");
+        System.out.println("----- Available Rooms -----");
+
+        for (Room room : rooms) {
+
+            int available = inventory.getAvailability(room.getRoomType());
+
+            if (available > 0) {
+
+                room.displayDetails();
+                System.out.println("Available Rooms: " + available);
+                System.out.println();
+            }
         }
     }
 }
 
 /**
- * Use Case 3: Centralized Room Inventory Management
+ * Use Case 4: Room Search & Availability Check
  */
 public class Bookmystay {
 
     public static void main(String[] args) {
 
-        // Initialize the inventory system
+
+        // Initialize inventory
         RoomInventory inventory = new RoomInventory();
 
-        // Display current inventory
-        inventory.displayInventory();
+        // Create room objects
+        Room[] rooms = {
+                new SingleRoom(),
+                new DoubleRoom(),
+                new SuiteRoom()
+        };
 
-        System.out.println("\nChecking availability of Single Room:");
-        System.out.println("Available: " + inventory.getAvailability("Single Room"));
+        // Initialize search service
+        RoomSearchService searchService = new RoomSearchService(inventory);
 
-        // Update availability
-        System.out.println("\nUpdating Single Room availability...");
-        inventory.updateAvailability("Single Room", 8);
-
-        // Display updated inventory
-        System.out.println("\nUpdated Inventory:");
-        inventory.displayInventory();
+        // Perform room search
+        searchService.searchAvailableRooms(rooms);
     }
 }
