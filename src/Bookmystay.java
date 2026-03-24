@@ -71,7 +71,7 @@ class PersistenceService {
 }
 
 // Main Class
-public class UseCase12DataPersistenceRecovery {
+public class Bookmystay {
 
     public static void main(String[] args) {
 
