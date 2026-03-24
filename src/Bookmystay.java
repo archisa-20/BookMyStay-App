@@ -1,69 +1,43 @@
 import java.util.*;
 
-// Custom Exception
-class CancellationException extends Exception {
-    public CancellationException(String message) {
-        super(message);
-    }
-}
-
-// Reservation Model
-class Reservation {
-    private String reservationId;
+// Booking Request Model
+class BookingRequest {
     private String guestName;
     private String roomType;
-    private String roomId;
-    private boolean isCancelled;
 
-    public Reservation(String reservationId, String guestName, String roomType, String roomId) {
-        this.reservationId = reservationId;
+    public BookingRequest(String guestName, String roomType) {
         this.guestName = guestName;
         this.roomType = roomType;
-        this.roomId = roomId;
-        this.isCancelled = false;
     }
 
-    public String getReservationId() { return reservationId; }
+    public String getGuestName() { return guestName; }
     public String getRoomType() { return roomType; }
-    public String getRoomId() { return roomId; }
-    public boolean isCancelled() { return isCancelled; }
-
-    public void cancel() {
-        this.isCancelled = true;
-    }
-
-    @Override
-    public String toString() {
-        return reservationId + " | " + guestName + " | " + roomType +
-                " | Room: " + roomId +
-                (isCancelled ? " | CANCELLED" : " | ACTIVE");
-    }
 }
 
-// Manages bookings (acts like history + active store)
-class BookingManager {
-    private Map<String, Reservation> reservations = new HashMap<>();
+// Shared Booking Queue
+class BookingQueue {
+    private Queue<BookingRequest> queue = new LinkedList<>();
 
-    public void addReservation(Reservation r) {
-        reservations.put(r.getReservationId(), r);
+    public synchronized void addRequest(BookingRequest request) {
+        queue.add(request);
+        notifyAll(); // wake up waiting threads
     }
 
-    public Reservation getReservation(String id) {
-        return reservations.get(id);
-    }
-
-    public void displayAll() {
-        System.out.println("\n=== Booking Records ===");
-        for (Reservation r : reservations.values()) {
-            System.out.println(r);
+    public synchronized BookingRequest getRequest() {
+        while (queue.isEmpty()) {
+            try {
+                wait();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
+        return queue.poll();
     }
 }
 
-// Handles inventory + rollback stack
+// Shared Inventory (Critical Section Protected)
 class InventoryManager {
     private Map<String, Integer> inventory = new HashMap<>();
-    private Stack<String> rollbackStack = new Stack<>();
 
     public InventoryManager() {
         inventory.put("Standard", 2);
@@ -71,100 +45,95 @@ class InventoryManager {
         inventory.put("Suite", 1);
     }
 
-    public void allocate(String roomType, String roomId) {
-        inventory.put(roomType, inventory.get(roomType) - 1);
-        rollbackStack.push(roomId);
-    }
+    // synchronized ensures thread-safe allocation
+    public synchronized boolean allocateRoom(String roomType, String guestName) {
 
-    public void rollback(String roomType) {
-        if (!rollbackStack.isEmpty()) {
-            String releasedRoom = rollbackStack.pop();
-            inventory.put(roomType, inventory.get(roomType) + 1);
-            System.out.println("Rolled back Room ID: " + releasedRoom);
+        int available = inventory.getOrDefault(roomType, 0);
+
+        if (available > 0) {
+            System.out.println(Thread.currentThread().getName() +
+                    " allocated " + roomType + " to " + guestName);
+
+            inventory.put(roomType, available - 1);
+
+            // simulate processing delay (to expose race conditions if not synchronized)
+            try { Thread.sleep(100); } catch (InterruptedException e) {}
+
+            return true;
+        } else {
+            System.out.println(Thread.currentThread().getName() +
+                    " FAILED for " + guestName + " (No " + roomType + " available)");
+            return false;
         }
     }
 
     public void displayInventory() {
-        System.out.println("\n=== Current Inventory ===");
+        System.out.println("\nFinal Inventory:");
         for (Map.Entry<String, Integer> e : inventory.entrySet()) {
             System.out.println(e.getKey() + " -> " + e.getValue());
         }
     }
 }
 
-// Cancellation Service
-class CancellationService {
+// Worker Thread (Consumer)
+class BookingProcessor extends Thread {
 
-    public void cancelBooking(String reservationId,
-                              BookingManager bookingManager,
-                              InventoryManager inventoryManager)
-            throws CancellationException {
+    private BookingQueue queue;
+    private InventoryManager inventory;
 
-        Reservation r = bookingManager.getReservation(reservationId);
+    public BookingProcessor(String name, BookingQueue queue, InventoryManager inventory) {
+        super(name);
+        this.queue = queue;
+        this.inventory = inventory;
+    }
 
-        // Validation
-        if (r == null) {
-            throw new CancellationException("Reservation does not exist.");
+    @Override
+    public void run() {
+        // Each thread processes 2 requests (for demo)
+        for (int i = 0; i < 2; i++) {
+            BookingRequest request = queue.getRequest();
+
+            inventory.allocateRoom(
+                    request.getRoomType(),
+                    request.getGuestName()
+            );
         }
-
-        if (r.isCancelled()) {
-            throw new CancellationException("Reservation already cancelled.");
-        }
-
-        // Controlled rollback
-        System.out.println("\nProcessing cancellation for: " + reservationId);
-
-        // Step 1: rollback inventory
-        inventoryManager.rollback(r.getRoomType());
-
-        // Step 2: mark booking cancelled
-        r.cancel();
-
-        System.out.println("Cancellation successful for " + reservationId);
     }
 }
 
 // Main Class
-public class Bookmystay {
+public class Bookmystay{
 
     public static void main(String[] args) {
 
-        BookingManager bookingManager = new BookingManager();
-        InventoryManager inventoryManager = new InventoryManager();
-        CancellationService cancellationService = new CancellationService();
+        BookingQueue queue = new BookingQueue();
+        InventoryManager inventory = new InventoryManager();
 
-        // Simulate confirmed bookings
-        Reservation r1 = new Reservation("RES201", "Alice", "Deluxe", "D1");
-        Reservation r2 = new Reservation("RES202", "Bob", "Suite", "S1");
+        // Simulate multiple guest requests
+        queue.addRequest(new BookingRequest("Alice", "Deluxe"));
+        queue.addRequest(new BookingRequest("Bob", "Deluxe"));
+        queue.addRequest(new BookingRequest("Charlie", "Suite"));
+        queue.addRequest(new BookingRequest("David", "Suite"));
 
-        bookingManager.addReservation(r1);
-        bookingManager.addReservation(r2);
+        // Create multiple threads (simulating concurrent users)
+        BookingProcessor t1 = new BookingProcessor("Thread-1", queue, inventory);
+        BookingProcessor t2 = new BookingProcessor("Thread-2", queue, inventory);
 
-        // Simulate allocation (affects inventory + stack)
-        inventoryManager.allocate("Deluxe", "D1");
-        inventoryManager.allocate("Suite", "S1");
+        // Start threads
+        t1.start();
+        t2.start();
 
-        bookingManager.displayAll();
-        inventoryManager.displayInventory();
-
-        // Cancellation scenarios
-        String[] cancelRequests = {
-                "RES201",  // valid
-                "RES999",  // non-existent
-                "RES201"   // already cancelled
-        };
-
-        for (String id : cancelRequests) {
-            try {
-                cancellationService.cancelBooking(id, bookingManager, inventoryManager);
-            } catch (CancellationException e) {
-                System.out.println("Cancellation Failed: " + e.getMessage());
-            }
+        // Wait for completion
+        try {
+            t1.join();
+            t2.join();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
 
-        bookingManager.displayAll();
-        inventoryManager.displayInventory();
+        // Final state
+        inventory.displayInventory();
 
-        System.out.println("\nSystem state remains consistent after rollback.");
+        System.out.println("\nSystem maintained consistency under concurrent load.");
     }
 }
